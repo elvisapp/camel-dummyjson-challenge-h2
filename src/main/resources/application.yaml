@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:ordersdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driverClassName: org.h2.Driver
+    username: sa
+    password: sa
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+payment:
+  success-url: https://dummyjson.com/http/200
+  failure-url: https://dummyjson.com/http/500
+  retry:
+    max-redeliveries: 3
+    redelivery-delay-ms: 200
+    backoff-multiplier: 2.0
+
+dummyjson:
+  base-url: https://dummyjson.com
+  products:
+    timeout-ms: 5000
+    max-retries: 3
+
+logging:
+  level:
+    root: INFO
+    org.apache.camel: INFO
