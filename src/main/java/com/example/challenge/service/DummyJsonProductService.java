@@ -85,9 +85,9 @@ public class DummyJsonProductService {
     } catch (HttpClientErrorException.NotFound e) {
       throw new IllegalArgumentException("Produto com SKU '" + sku + "' não encontrado na API DummyJSON");
     } catch (HttpClientErrorException e) {
-      throw new RuntimeException("Erro ao consultar produto SKU '" + sku + "': HTTP " + e.getStatusCode(), e);
+      throw new IllegalArgumentException("Erro ao consultar produto SKU '" + sku + "': HTTP " + e.getStatusCode(), e);
     } catch (ResourceAccessException e) {
-      throw new RuntimeException("Erro de rede ao consultar produto SKU '" + sku + "': " + e.getMessage(), e);
+      throw new IllegalArgumentException("Erro de rede ao consultar produto SKU '" + sku + "': " + e.getMessage(), e);
     }
   }
   

@@ -2,6 +2,7 @@ package com.example.challenge.service;
 
 import com.example.challenge.api.dto.NewOrderRequest;
 import com.example.challenge.api.dto.UpdateOrderRequest;
+import com.example.challenge.api.dto.DummyJsonProduct;
 import com.example.challenge.domain.Order;
 import com.example.challenge.domain.OrderItem;
 import com.example.challenge.domain.OrderStatus;
@@ -13,10 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,6 +29,9 @@ class OrderServiceTest {
 
     @Mock
     private OrderRepository orderRepository;
+
+    @Mock
+    private DummyJsonProductService productService;
 
     @InjectMocks
     private OrderService orderService;
@@ -72,7 +73,20 @@ class OrderServiceTest {
 
     @Test
     void testCreateOrder() {
-        when(orderRepository.save(any(Order.class))).thenReturn(mockOrder);
+        // Mock product with proper pricing
+        DummyJsonProduct product1 = new DummyJsonProduct();
+        product1.setPrice(100.0);
+        product1.setDiscountPercentage(0.0);
+
+        // Mock product validation
+        when(productService.validateSkus(anyList())).thenReturn(Map.of("SKU001", product1));
+
+        // Mock the repository save to return the order with calculated total
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order savedOrder = invocation.getArgument(0);
+            // The total should be calculated by the service before saving
+            return savedOrder;
+        });
 
         Order result = orderService.create(newOrderRequest);
 
@@ -80,18 +94,19 @@ class OrderServiceTest {
         assertEquals(OrderStatus.NEW, result.getStatus());
         assertEquals(200.0, result.getTotal()); // 2 * 100.0
         verify(orderRepository, times(1)).save(any(Order.class));
+        verify(productService, times(1)).validateSkus(anyList());
     }
 
     @Test
     void testCreateOrderWithMultipleItems() {
         List<com.example.challenge.api.dto.NewOrderRequest.Item> items = new ArrayList<>();
-        
+
         com.example.challenge.api.dto.NewOrderRequest.Item item1 = new com.example.challenge.api.dto.NewOrderRequest.Item();
         item1.setSku("SKU001");
         item1.setQty(2);
         item1.setUnitPrice(100.0);
         items.add(item1);
-        
+
         com.example.challenge.api.dto.NewOrderRequest.Item item2 = new com.example.challenge.api.dto.NewOrderRequest.Item();
         item2.setSku("SKU002");
         item2.setQty(3);
@@ -102,7 +117,24 @@ class OrderServiceTest {
         request.setCustomerId("customer1");
         request.setItems(items);
 
-        when(orderRepository.save(any(Order.class))).thenReturn(mockOrder);
+        // Mock products with proper pricing
+        DummyJsonProduct product1 = new DummyJsonProduct();
+        product1.setPrice(100.0);
+        product1.setDiscountPercentage(0.0);
+
+        DummyJsonProduct product2 = new DummyJsonProduct();
+        product2.setPrice(50.0);
+        product2.setDiscountPercentage(0.0);
+
+        // Mock product validation for multiple SKUs
+        when(productService.validateSkus(anyList())).thenReturn(Map.of("SKU001", product1, "SKU002", product2));
+
+        // Mock the repository save to return the order with calculated total
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order savedOrder = invocation.getArgument(0);
+            // The total should be calculated by the service before saving
+            return savedOrder;
+        });
 
         Order result = orderService.create(request);
 
@@ -116,7 +148,9 @@ class OrderServiceTest {
         Optional<Order> result = orderService.get("12345");
 
         assertTrue(result.isPresent());
-        assertEquals("12345", result.get().getId());
+        // Order ID is generated as UUID, not a fixed string
+        assertNotNull(result.get().getId());
+        assertEquals(mockOrder.getId(), result.get().getId());
     }
 
     @Test
@@ -132,7 +166,21 @@ class OrderServiceTest {
     void testUpdateItemsSuccess() {
         mockOrder.setStatus(OrderStatus.NEW);
         when(orderRepository.findById("12345")).thenReturn(Optional.of(mockOrder));
-        when(orderRepository.save(any(Order.class))).thenReturn(mockOrder);
+
+        // Mock product with proper pricing for update
+        DummyJsonProduct updateProduct = new DummyJsonProduct();
+        updateProduct.setPrice(500.0);
+        updateProduct.setDiscountPercentage(0.0);
+
+        // Mock product validation for update
+        when(productService.validateSkus(anyList())).thenReturn(Map.of("SKU002", updateProduct));
+
+        // Mock the repository save to return the order with calculated total
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order savedOrder = invocation.getArgument(0);
+            // The total should be calculated by the service before saving
+            return savedOrder;
+        });
 
         Order result = orderService.updateItems("12345", updateOrderRequest);
 

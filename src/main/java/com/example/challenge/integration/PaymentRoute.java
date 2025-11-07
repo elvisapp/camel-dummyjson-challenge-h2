@@ -55,6 +55,7 @@ public class PaymentRoute extends RouteBuilder {
       });
 
     from("direct:payOrder")
+      .routeId("payment-route")
       .log("Iniciando processamento de pagamento para pedido ${header.orderId}, amount: ${header.amount} - exchangeId: ${exchangeId}")
       // Salvar orderId como property para casos de erro
       .setProperty("orderId").header("orderId")

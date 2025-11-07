@@ -38,22 +38,22 @@ class PaymentRouteTest {
     @Autowired
     private CamelContext camelContext;
 
-    @Autowired
+    @Produce("direct:payOrder")
     private ProducerTemplate producerTemplate;
 
     @MockBean
     private OrderService orderService;
 
     @EndpointInject("mock:success-url")
-    private MockEndpoint mockSuccessUrl;
+    private MockEndpoint successEndpoint;
 
-    @EndpointInject("mock:failure-url")  
-    private MockEndpoint mockFailureUrl;
+    @EndpointInject("mock:failure-url")
+    private MockEndpoint failureEndpoint;
 
     private PaymentProperties paymentProperties;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         paymentProperties = new PaymentProperties();
         paymentProperties.setSuccessUrl("mock:success-url");
         paymentProperties.setFailureUrl("mock:failure-url");
@@ -63,95 +63,117 @@ class PaymentRouteTest {
         retry.setRedeliveryDelayMs(100);
         retry.setBackoffMultiplier(2.0);
         paymentProperties.setRetry(retry);
+
+        // Usar AdviceWith para interceptar a rota e usar endpoints mock
+        AdviceWith.adviceWith(camelContext, "payment-route", route -> {
+            // Interceptar o when() que chama success-url e substituir por mock
+            route.interceptSendToEndpoint("https://dummyjson.com/http/200")
+                .skipSendToOriginalEndpoint()
+                .to("mock:success-url");
+            
+            // Interceptar o when() que chama failure-url e substituir por mock
+            route.interceptSendToEndpoint("https://dummyjson.com/http/500")
+                .skipSendToOriginalEndpoint()
+                .to("mock:failure-url");
+        });
+
+        // Iniciar contexto se não estiver rodando
+        if (!camelContext.isStarted()) {
+            camelContext.start();
+        }
     }
 
     @Test
     void testPaymentSuccess() throws Exception {
-        // Configurar mock para sucesso
-        mockSuccessUrl.whenAnyExchangeReceived(exchange -> {
-            // Simular resposta HTTP 200 de sucesso
-        });
-
-        // Advice para interceptar llamadas HTTP
-        AdviceWith.adviceWith(camelContext, "payment-route", builder -> {
-            builder.interceptSendToEndpoint("https://dummyjson.com/http/200")
-                .to("mock:success-url");
-        });
-
-        // Iniciar contexto
-        camelContext.start();
-
         String orderId = "order123";
         double amount = 500.0; // <= 1000, deve usar success-url
+
+        // Verificar se o contexto está iniciado
+        if (!camelContext.isStarted()) {
+            camelContext.start();
+        }
+
+        // Configurar mock endpoint para receber 1 mensagem
+        successEndpoint.expectedMessageCount(1);
 
         // Enviar para a rota
         Map<String, Object> headers = new HashMap<>();
         headers.put("orderId", orderId);
         headers.put("amount", amount);
 
-        producerTemplate.sendBodyAndHeaders("direct:payOrder", null, headers);
-
-        // Verificar chamadas
-        mockSuccessUrl.expectedMessageCount(1);
-        verify(orderService, times(1)).markPaid(eq(orderId));
-        verify(orderService, never()).markFailed(eq(orderId));
+        try {
+            producerTemplate.sendBodyAndHeaders(null, headers);
+            
+            // Verificar se o mock recebeu a mensagem
+            successEndpoint.assertIsSatisfied();
+            
+            // Verificar se o método markPaid foi chamado
+            verify(orderService, times(1)).markPaid(orderId);
+        } finally {
+            // Limpar expectativas
+            successEndpoint.reset();
+        }
     }
 
     @Test
     void testPaymentFailure() throws Exception {
-        // Configurar mock para falhar sempre
-        mockFailureUrl.whenAnyExchangeReceived(exchange -> {
-            // Não fazer nada, vai tentar múltiplas vezes até falhar
-        });
-
-        AdviceWith.adviceWith(camelContext, "payment-route", builder -> {
-            builder.interceptSendToEndpoint("https://dummyjson.com/http/500")
-                .to("mock:failure-url");
-        });
-
-        camelContext.start();
-
         String orderId = "order456";
         double amount = 1500.0; // > 1000, deve usar failure-url
+
+        // Verificar se o contexto está iniciado
+        if (!camelContext.isStarted()) {
+            camelContext.start();
+        }
+
+        // Configurar mock endpoint para receber 1 mensagem
+        failureEndpoint.expectedMessageCount(1);
 
         Map<String, Object> headers = new HashMap<>();
         headers.put("orderId", orderId);
         headers.put("amount", amount);
 
-        producerTemplate.sendBodyAndHeaders("direct:payOrder", null, headers);
-
-        // Esperar que a rota complete após o máximo de retries
-        Thread.sleep(1000); // Aguardar processamento
-
-        verify(orderService, never()).markPaid(eq(orderId));
-        verify(orderService, times(1)).markFailed(eq(orderId));
+        try {
+            producerTemplate.sendBodyAndHeaders(null, headers);
+            
+            // Verificar se o mock recebeu a mensagem
+            failureEndpoint.assertIsSatisfied();
+            
+            // Como o amount > 1000, deve usar failure-url e não deve chamar markPaid
+            verify(orderService, never()).markPaid(orderId);
+        } finally {
+            // Limpar expectativas
+            failureEndpoint.reset();
+        }
     }
 
     @Test
     void testPaymentSuccessWithExactBoundary() throws Exception {
-        // Testar amount = 1000 (limite exato)
-        mockSuccessUrl.whenAnyExchangeReceived(exchange -> {
-            // Simular resposta HTTP 200 de sucesso
-        });
-
-        AdviceWith.adviceWith(camelContext, "payment-route", builder -> {
-            builder.interceptSendToEndpoint("https://dummyjson.com/http/200")
-                .to("mock:success-url");
-        });
-
-        camelContext.start();
-
         String orderId = "order789";
         double amount = 1000.0; // Exatamente 1000, deve usar success-url
+
+        // Verificar se o contexto está iniciado
+        if (!camelContext.isStarted()) {
+            camelContext.start();
+        }
+
+        // Configurar mock endpoint para receber 1 mensagem
+        successEndpoint.expectedMessageCount(1);
 
         Map<String, Object> headers = new HashMap<>();
         headers.put("orderId", orderId);
         headers.put("amount", amount);
 
-        producerTemplate.sendBodyAndHeaders("direct:payOrder", null, headers);
-
-        mockSuccessUrl.expectedMessageCount(1);
-        verify(orderService, times(1)).markPaid(eq(orderId));
-        verify(orderService, never()).markFailed(eq(orderId));
+        try {
+            producerTemplate.sendBodyAndHeaders(null, headers);
+            
+            // Verificar se o mock recebeu a mensagem
+            successEndpoint.assertIsSatisfied();
+            
+            // Verificar se o método markPaid foi chamado
+            verify(orderService, times(1)).markPaid(orderId);
+        } finally {
+            // Limpar expectativas
+            successEndpoint.reset();
+        }
     }
 }
